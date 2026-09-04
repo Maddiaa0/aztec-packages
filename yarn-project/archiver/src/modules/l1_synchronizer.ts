@@ -506,7 +506,12 @@ export class ArchiverL1Synchronizer implements Traceable {
     do {
       [searchStartBlock, searchEndBlock] = this.nextRange(searchEndBlock, toL1Block);
       this.log.trace(`Retrieving L1 to L2 messages in L1 blocks ${searchStartBlock}-${searchEndBlock}`);
-      const messages = await retrieveL1ToL2Messages(this.inbox, searchStartBlock, searchEndBlock);
+      const messages = await retrieveL1ToL2Messages(
+        this.inbox,
+        searchStartBlock,
+        searchEndBlock,
+        this.publicClient.chain.id,
+      );
       const timer = new Timer();
       await this.stores.messages.addL1ToL2Messages(messages);
       const perMsg = timer.ms() / messages.length;

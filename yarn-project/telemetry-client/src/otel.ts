@@ -1,4 +1,5 @@
 import { type LogData, type Logger, addLogDataHandler } from '@aztec/foundation/log';
+import { EVM_TX_HINT_EVENT_NAME } from '@aztec/foundation/telemetry';
 
 import {
   type Context,
@@ -403,26 +404,36 @@ export class OpenTelemetryClient implements TelemetryClient {
 
   private static getCustomClientFactory(config: TelemetryClientConfig): OpenTelemetryClientFactory {
     return (resource: IResource, log: Logger) => {
-      const traceExporters = [
-        ...(config.tracesCollectorUrl ? [new OTLPTraceExporter({ url: config.tracesCollectorUrl.href })] : []),
+      const spanProcessorConfig = {
+        maxQueueSize: config.otelBspMaxQueueSize,
+        minTraceDurationMs: config.otelMinTraceDurationMs,
+      };
+      const spanProcessors = [
+        ...(config.tracesCollectorUrl
+          ? [
+              new MonitoredBatchSpanProcessor(
+                new OTLPTraceExporter({ url: config.tracesCollectorUrl.href }),
+                log,
+                spanProcessorConfig,
+              ),
+            ]
+          : []),
         ...(config.miradorApiKey
           ? [
-              new OTLPTraceExporter({
-                url: MIRADOR_TRACES_ENDPOINT,
-                headers: { Authorization: config.miradorApiKey.getValue() },
-              }),
+              new MonitoredBatchSpanProcessor(
+                new OTLPTraceExporter({
+                  url: MIRADOR_TRACES_ENDPOINT,
+                  headers: { Authorization: config.miradorApiKey.getValue() },
+                }),
+                log,
+                { ...spanProcessorConfig, retainedEventNames: [EVM_TX_HINT_EVENT_NAME] },
+              ),
             ]
           : []),
       ];
       const tracerProvider = new NodeTracerProvider({
         resource,
-        spanProcessors: traceExporters.map(
-          exporter =>
-            new MonitoredBatchSpanProcessor(exporter, log, {
-              maxQueueSize: config.otelBspMaxQueueSize,
-              minTraceDurationMs: config.otelMinTraceDurationMs,
-            }),
-        ),
+        spanProcessors,
       });
 
       tracerProvider.register({

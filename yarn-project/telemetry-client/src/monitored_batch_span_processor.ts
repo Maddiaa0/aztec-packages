@@ -18,6 +18,7 @@ const DEFAULT_MAX_EXPORT_BATCH_SIZE = 2048;
 
 export type MonitoredBatchSpanProcessorConfig = BufferConfig & {
   minTraceDurationMs?: number;
+  retainedEventNames?: readonly string[];
 };
 
 /**
@@ -28,6 +29,7 @@ export type MonitoredBatchSpanProcessorConfig = BufferConfig & {
 export class MonitoredBatchSpanProcessor extends BatchSpanProcessor {
   private readonly maxQueueSize: number;
   private readonly minTraceDurationMs: number;
+  private readonly retainedEventNames: ReadonlySet<string>;
   private readonly log: Logger;
 
   private approxQueueSize = 0;
@@ -36,11 +38,13 @@ export class MonitoredBatchSpanProcessor extends BatchSpanProcessor {
   private lastWarningTime = 0;
 
   constructor(exporter: SpanExporter, log: Logger, config?: MonitoredBatchSpanProcessorConfig) {
-    const maxQueueSize = config?.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE;
-    const maxExportBatchSize = Math.min(config?.maxExportBatchSize ?? DEFAULT_MAX_EXPORT_BATCH_SIZE, maxQueueSize);
-    super(exporter, { ...config, maxQueueSize, maxExportBatchSize });
+    const { minTraceDurationMs, retainedEventNames, ...bufferConfig } = config ?? {};
+    const maxQueueSize = bufferConfig.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE;
+    const maxExportBatchSize = Math.min(bufferConfig.maxExportBatchSize ?? DEFAULT_MAX_EXPORT_BATCH_SIZE, maxQueueSize);
+    super(exporter, { ...bufferConfig, maxQueueSize, maxExportBatchSize });
     this.maxQueueSize = maxQueueSize;
-    this.minTraceDurationMs = Math.max(0, config?.minTraceDurationMs ?? DEFAULT_MIN_TRACE_DURATION_MS);
+    this.minTraceDurationMs = Math.max(0, minTraceDurationMs ?? DEFAULT_MIN_TRACE_DURATION_MS);
+    this.retainedEventNames = new Set(retainedEventNames);
     this.log = log;
   }
 
@@ -81,6 +85,7 @@ export class MonitoredBatchSpanProcessor extends BatchSpanProcessor {
     return (
       this.minTraceDurationMs > 0 &&
       span.status.code !== SpanStatusCode.ERROR &&
+      !span.events.some(event => this.retainedEventNames.has(event.name)) &&
       hrTimeToMilliseconds(span.duration) < this.minTraceDurationMs
     );
   }

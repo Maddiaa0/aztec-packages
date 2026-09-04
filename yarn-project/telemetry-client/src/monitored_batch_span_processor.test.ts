@@ -20,7 +20,11 @@ class CollectingSpanExporter implements SpanExporter {
 
 const makeLog = () => ({ warn: jest.fn() }) as any;
 
-function makeSpan(durationMs: number, statusCode = SpanStatusCode.OK): ReadableSpan {
+function makeSpan(
+  durationMs: number,
+  statusCode = SpanStatusCode.OK,
+  eventNames: readonly string[] = [],
+): ReadableSpan {
   const seconds = Math.floor(durationMs / 1000);
   const nanos = (durationMs - seconds * 1000) * 1_000_000;
   return {
@@ -31,7 +35,11 @@ function makeSpan(durationMs: number, statusCode = SpanStatusCode.OK): ReadableS
     duration: [seconds, nanos],
     ended: true,
     endTime: [seconds, nanos],
-    events: [],
+    events: eventNames.map(name => ({
+      name,
+      time: [0, 0],
+      droppedAttributesCount: 0,
+    })),
     instrumentationLibrary: {} as any,
     kind: SpanKind.INTERNAL,
     links: [],
@@ -53,6 +61,26 @@ describe('MonitoredBatchSpanProcessor', () => {
     await processor.forceFlush();
 
     expect(exporter.spans.map(span => span.name)).toEqual(['span-10']);
+  });
+
+  it('exports short spans containing a retained event', async () => {
+    const retainedExporter = new CollectingSpanExporter();
+    const standardExporter = new CollectingSpanExporter();
+    const config = {
+      minTraceDurationMs: 10,
+      retainedEventNames: ['mirador.web3.evm.txhint'],
+    };
+    const retainedProcessor = new MonitoredBatchSpanProcessor(retainedExporter, makeLog(), config);
+    const standardProcessor = new MonitoredBatchSpanProcessor(standardExporter, makeLog(), { minTraceDurationMs: 10 });
+
+    retainedProcessor.onEnd(makeSpan(1, SpanStatusCode.OK, ['mirador.web3.evm.txhint']));
+    retainedProcessor.onEnd(makeSpan(1, SpanStatusCode.OK, ['unrelated.event']));
+    standardProcessor.onEnd(makeSpan(1, SpanStatusCode.OK, ['mirador.web3.evm.txhint']));
+    await Promise.all([retainedProcessor.forceFlush(), standardProcessor.forceFlush()]);
+
+    expect(retainedExporter.spans).toHaveLength(1);
+    expect(retainedExporter.spans[0].events.map(event => event.name)).toEqual(['mirador.web3.evm.txhint']);
+    expect(standardExporter.spans).toHaveLength(0);
   });
 
   it('exports short error spans', async () => {
