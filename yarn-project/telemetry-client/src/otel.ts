@@ -49,6 +49,8 @@ import type {
   UpDownCounter,
 } from './telemetry.js';
 
+const MIRADOR_TRACES_ENDPOINT = 'https://otel.mirador.org/v1/traces';
+
 /** Wraps an OpenTelemetry Meter to implement our custom Meter interface */
 class WrappedMeter implements Meter {
   constructor(private otelMeter: OtelMeter) {}
@@ -401,16 +403,26 @@ export class OpenTelemetryClient implements TelemetryClient {
 
   private static getCustomClientFactory(config: TelemetryClientConfig): OpenTelemetryClientFactory {
     return (resource: IResource, log: Logger) => {
-      const tracerProvider = new NodeTracerProvider({
-        resource,
-        spanProcessors: config.tracesCollectorUrl
+      const traceExporters = [
+        ...(config.tracesCollectorUrl ? [new OTLPTraceExporter({ url: config.tracesCollectorUrl.href })] : []),
+        ...(config.miradorApiKey
           ? [
-              new MonitoredBatchSpanProcessor(new OTLPTraceExporter({ url: config.tracesCollectorUrl.href }), log, {
-                maxQueueSize: config.otelBspMaxQueueSize,
-                minTraceDurationMs: config.otelMinTraceDurationMs,
+              new OTLPTraceExporter({
+                url: MIRADOR_TRACES_ENDPOINT,
+                headers: { Authorization: config.miradorApiKey.getValue() },
               }),
             ]
-          : [],
+          : []),
+      ];
+      const tracerProvider = new NodeTracerProvider({
+        resource,
+        spanProcessors: traceExporters.map(
+          exporter =>
+            new MonitoredBatchSpanProcessor(exporter, log, {
+              maxQueueSize: config.otelBspMaxQueueSize,
+              minTraceDurationMs: config.otelMinTraceDurationMs,
+            }),
+        ),
       });
 
       tracerProvider.register({

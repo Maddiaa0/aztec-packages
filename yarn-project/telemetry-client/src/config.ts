@@ -1,8 +1,10 @@
 import {
   type ConfigMappingsType,
+  type SecretValue,
   booleanConfigHelper,
   getConfigFromMappings,
   numberConfigHelper,
+  secretStringConfigHelper,
 } from '@aztec/foundation/config';
 
 export interface TelemetryClientConfig {
@@ -12,6 +14,7 @@ export interface TelemetryClientConfig {
   publicMetricsOptOut: boolean;
   publicMetricsCollectFrom: string[];
   tracesCollectorUrl?: URL;
+  miradorApiKey?: SecretValue<string>;
   logsCollectorUrl?: URL;
   otelCollectIntervalMs: number;
   otelExportTimeoutMs: number;
@@ -31,6 +34,11 @@ export const telemetryClientConfigMappings: ConfigMappingsType<TelemetryClientCo
     env: 'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT',
     description: 'The URL of the telemetry collector for traces',
     parseEnv: (val: string) => new URL(val),
+  },
+  miradorApiKey: {
+    env: 'MIRADOR_API_KEY',
+    description: 'The API key used to export traces to Mirador',
+    ...secretStringConfigHelper(),
   },
   logsCollectorUrl: {
     env: 'OTEL_EXPORTER_OTLP_LOGS_ENDPOINT',

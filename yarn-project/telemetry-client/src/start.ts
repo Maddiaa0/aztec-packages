@@ -23,6 +23,7 @@ export async function initTelemetryClient(
     config.metricsCollectorUrl ||
     config.publicMetricsCollectorUrl ||
     config.tracesCollectorUrl ||
+    config.miradorApiKey ||
     config.logsCollectorUrl
   ) {
     log.info(`Using OpenTelemetry client with custom collector`);
