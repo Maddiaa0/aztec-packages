@@ -1,5 +1,6 @@
 export * from './config.js';
 export * from './constants.js';
+export * from './evm_tx_hint.js';
 export * from './factory.js';
 export * from './fee-strategies/index.js';
 export * from './interfaces.js';

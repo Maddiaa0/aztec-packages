@@ -15,6 +15,7 @@ import type {
   ViemCommitteeAttestations,
   ViemHeader,
 } from '@aztec/ethereum/contracts';
+import { recordEvmTxHint } from '@aztec/ethereum/l1-tx-utils';
 import type { ViemPublicClient, ViemPublicDebugClient } from '@aztec/ethereum/types';
 import { asyncPool } from '@aztec/foundation/async-pool';
 import { CheckpointNumber, IndexWithinCheckpoint } from '@aztec/foundation/branded-types';
@@ -251,6 +252,7 @@ async function processCheckpointProposedLogs(
     logger,
     EthAddress.fromString(rollup.address),
   );
+  const hintedTxHashes = new Set<Hex>();
 
   await asyncPool(10, logs, async log => {
     const checkpointNumber = log.args.checkpointNumber;
@@ -259,6 +261,11 @@ async function processCheckpointProposedLogs(
     const blobHashes = log.args.versionedBlobHashes;
 
     if (archive.equals(archiveFromChain)) {
+      if (!hintedTxHashes.has(log.l1TransactionHash)) {
+        hintedTxHashes.add(log.l1TransactionHash);
+        recordEvmTxHint({ txHash: log.l1TransactionHash, chainId: publicClient.chain.id });
+      }
+
       const expectedHashes = {
         attestationsHash: log.args.attestationsHash.toString() as Hex,
         payloadDigest: log.args.payloadDigest.toString() as Hex,
@@ -357,12 +364,14 @@ export async function retrieveL1ToL2Message(
  * @param inbox - The inbox contract wrapper.
  * @param searchStartBlock - The block number to use for starting the search.
  * @param searchEndBlock - The highest block number that we should search up to.
+ * @param l1ChainId - The EVM chain containing the inbox contract.
  * @returns An array of InboxLeaf and next eth block to search from.
  */
 export async function retrieveL1ToL2Messages(
   inbox: InboxContract,
   searchStartBlock: bigint,
   searchEndBlock: bigint,
+  l1ChainId: number,
 ): Promise<InboxMessage[]> {
   const retrievedL1ToL2Messages: InboxMessage[] = [];
   while (searchStartBlock <= searchEndBlock) {
@@ -370,6 +379,10 @@ export async function retrieveL1ToL2Messages(
 
     if (messageSentLogs.length === 0) {
       break;
+    }
+
+    for (const txHash of new Set(messageSentLogs.map(log => log.l1TransactionHash))) {
+      recordEvmTxHint({ txHash, chainId: l1ChainId });
     }
 
     retrievedL1ToL2Messages.push(...messageSentLogs.map(mapLogInboxMessage));

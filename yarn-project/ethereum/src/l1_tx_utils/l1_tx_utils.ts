@@ -27,6 +27,7 @@ import type { ViemClient } from '../types.js';
 import { formatViemError } from '../utils.js';
 import { type L1TxUtilsConfig, l1TxUtilsConfigMappings } from './config.js';
 import { MAX_L1_TX_LIMIT } from './constants.js';
+import { recordEvmTxHint } from './evm_tx_hint.js';
 import type { IL1TxMetrics, IL1TxStore } from './interfaces.js';
 import { ReadOnlyL1TxUtils } from './readonly_l1_tx_utils.js';
 import { Delayer, createDelayer, wrapClientWithDelayer } from './tx_delayer.js';
@@ -205,6 +206,10 @@ export class L1TxUtils extends ReadOnlyL1TxUtils {
       txs: pendingStates.map(s => ({ id: s.id, nonce: s.nonce, status: TxUtilsState[s.status] })),
     });
 
+    for (const txHash of new Set(pendingStates.flatMap(state => [...state.txHashes, ...state.cancelTxHashes]))) {
+      recordEvmTxHint({ txHash, chainId: this.client.chain.id });
+    }
+
     for (const state of pendingStates) {
       void this.monitorTransaction(state).catch(err => {
         this.logger.error(
@@ -290,7 +295,7 @@ export class L1TxUtils extends ReadOnlyL1TxUtils {
         const txData = this.makeTxData(baseState, { isCancelTx: false });
 
         const signedRequest = await this.prepareSignedTransaction(txData);
-        txHash = await this.client.sendRawTransaction({ serializedTransaction: signedRequest });
+        txHash = await this.broadcastTransaction(signedRequest);
         this.lastSentNonce = nonce;
       } finally {
         this.sendMutex.release();
@@ -521,7 +526,7 @@ export class L1TxUtils extends ReadOnlyL1TxUtils {
           const txData = this.makeTxData(state, { isCancelTx });
 
           const signedRequest = await this.prepareSignedTransaction(txData);
-          const newHash = await this.client.sendRawTransaction({ serializedTransaction: signedRequest });
+          const newHash = await this.broadcastTransaction(signedRequest);
 
           this.logger.verbose(
             `Sent L1 speed-up tx ${newHash} replacing ${currentTxHash} for nonce ${nonce} from ${account}`,
@@ -779,7 +784,7 @@ export class L1TxUtils extends ReadOnlyL1TxUtils {
 
     const txData = this.makeTxData(state, { isCancelTx: true });
     const signedRequest = await this.prepareSignedTransaction(txData);
-    const cancelTxHash = await this.client.sendRawTransaction({ serializedTransaction: signedRequest });
+    const cancelTxHash = await this.broadcastTransaction(signedRequest);
 
     state.cancelTxHashes.push(cancelTxHash);
     await this.updateState(state, TxUtilsState.CANCELLED);
@@ -805,6 +810,12 @@ export class L1TxUtils extends ReadOnlyL1TxUtils {
   private async getL1Timestamp() {
     const { timestamp } = await this.client.getBlock({ blockTag: 'latest', includeTransactions: false });
     return Number(timestamp) * 1000;
+  }
+
+  private async broadcastTransaction(serializedTransaction: Hex): Promise<Hex> {
+    const txHash = await this.client.sendRawTransaction({ serializedTransaction });
+    recordEvmTxHint({ txHash, chainId: this.client.chain.id });
+    return txHash;
   }
 
   /** Makes empty blob inputs for the cancellation tx. */

@@ -80,6 +80,7 @@
     "./serialize": "./dest/serialize/index.js",
     "./sleep": "./dest/sleep/index.js",
     "./timer": "./dest/timer/index.js",
+    "./telemetry": "./dest/telemetry/index.js",
     "./transport": "./dest/transport/index.js",
     "./trees": "./dest/trees/index.js",
     "./bigint-buffer": "./dest/bigint-buffer/index.js",

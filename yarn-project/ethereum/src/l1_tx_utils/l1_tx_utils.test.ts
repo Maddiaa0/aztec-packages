@@ -10,6 +10,7 @@ import { DateProvider, TestDateProvider } from '@aztec/foundation/timer';
 import { getErrorCause } from '@aztec/foundation/types';
 
 import { jest } from '@jest/globals';
+import { type Span, trace } from '@opentelemetry/api';
 import { type MockProxy, mock } from 'jest-mock-extended';
 import assert from 'node:assert';
 import {
@@ -140,6 +141,19 @@ describe('L1TxUtils', () => {
     afterEach(async () => {
       gasUtils.interrupt();
       await gasUtils.waitMonitoringStopped(1);
+    });
+
+    it('records the hash returned by an L1 broadcast', async () => {
+      const span = mock<Span>();
+      span.isRecording.mockReturnValue(true);
+      using _activeSpanSpy = jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
+
+      const { txHash } = await gasUtils.sendTransaction(request);
+
+      expect(span.addEvent).toHaveBeenCalledWith('mirador.web3.evm.txhint', {
+        'tx.hash': txHash,
+        'chain.id': l1Client.chain.id,
+      });
     });
 
     it('recovery send reuses nonce after sendRawTransaction fails', async () => {
@@ -1868,6 +1882,9 @@ describe('L1TxUtils', () => {
       // Create a new instance with the same store (simulating a restart)
       const recreatedUtils = createL1TxUtils();
       recreatedUtils.setStore(store);
+      const span = mock<Span>();
+      span.isRecording.mockReturnValue(true);
+      using _activeSpanSpy = jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
       await recreatedUtils.loadStateAndResumeMonitoring();
 
       // Check that state is restored as SENT
@@ -1875,6 +1892,10 @@ describe('L1TxUtils', () => {
       expect(recreatedUtils.txs).toHaveLength(1);
       expect(recreatedUtils.txs[0].txHashes[0]).toBe(txHash);
       expect(recreatedUtils.txs[0].status).toBe(TxUtilsState.SENT);
+      expect(span.addEvent).toHaveBeenCalledWith('mirador.web3.evm.txhint', {
+        'tx.hash': txHash,
+        'chain.id': l1Client.chain.id,
+      });
 
       // Mine some blocks so the transaction gets mined
       await cheatCodes.evmMine();
