@@ -27,6 +27,7 @@ import type { ViemClient } from '../types.js';
 import { formatViemError } from '../utils.js';
 import { type L1TxUtilsConfig, l1TxUtilsConfigMappings } from './config.js';
 import { MAX_L1_TX_LIMIT } from './constants.js';
+import { addEvmTxHint } from './evm_tx_hint.js';
 import type { IL1TxMetrics, IL1TxStore } from './interfaces.js';
 import { ReadOnlyL1TxUtils } from './readonly_l1_tx_utils.js';
 import { Delayer, createDelayer, wrapClientWithDelayer } from './tx_delayer.js';
@@ -291,6 +292,7 @@ export class L1TxUtils extends ReadOnlyL1TxUtils {
 
         const signedRequest = await this.prepareSignedTransaction(txData);
         txHash = await this.client.sendRawTransaction({ serializedTransaction: signedRequest });
+        addEvmTxHint(txHash, this.client.chain.id);
         this.lastSentNonce = nonce;
       } finally {
         this.sendMutex.release();
@@ -522,6 +524,7 @@ export class L1TxUtils extends ReadOnlyL1TxUtils {
 
           const signedRequest = await this.prepareSignedTransaction(txData);
           const newHash = await this.client.sendRawTransaction({ serializedTransaction: signedRequest });
+          addEvmTxHint(newHash, this.client.chain.id);
 
           this.logger.verbose(
             `Sent L1 speed-up tx ${newHash} replacing ${currentTxHash} for nonce ${nonce} from ${account}`,
@@ -780,6 +783,7 @@ export class L1TxUtils extends ReadOnlyL1TxUtils {
     const txData = this.makeTxData(state, { isCancelTx: true });
     const signedRequest = await this.prepareSignedTransaction(txData);
     const cancelTxHash = await this.client.sendRawTransaction({ serializedTransaction: signedRequest });
+    addEvmTxHint(cancelTxHash, this.client.chain.id);
 
     state.cancelTxHashes.push(cancelTxHash);
     await this.updateState(state, TxUtilsState.CANCELLED);
